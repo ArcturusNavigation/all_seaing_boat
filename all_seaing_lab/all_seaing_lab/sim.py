@@ -1,0 +1,176 @@
+import rclpy
+from rclpy.node import Node
+
+# from std_msgs.msg import String
+from nav_msgs.msg import MapMetaData, OccupancyGrid, Odometry
+from geometry_msgs.msg import PoseStamped, Twist, Point, Vector3, Quaternion
+import numpy as np
+
+from tf_transformations import euler_from_quaternion, quaternion_from_euler, quaternion_multiply
+
+
+class BoatSimulation(Node):
+
+    def __init__(self):
+        super().__init__('sim_node')
+
+        self.map_height = 400
+        self.map_width = 400
+        self.grid_resolution = 1.0  # m/cell
+        self.global_frame_id = "map"
+
+        
+        # Internal map grid (unknown = -1, free space = 0)
+        self.grid_data = np.full((self.map_height, self.map_width), 0, dtype=np.int8)  # Start with all unknown
+
+        # Internal boat pose [position, orientation]
+        self.boat_pose_position = np.array([0.0, 0.0, 0.0])
+        self.boat_pose_orientation = np.array([0.0, 0.0, 0.0, 1.0])
+
+        # Internal boat velocity [linear, angular]
+        self.boat_vel_linear = np.array([0.0, 0.0, 0.0])
+        self.boat_vel_angular = np.array([0.0, 0.0, 0.0])
+
+        # Target boat velocity (updated by cmd_vel)
+        self.target_vel_linear = np.array([0.0, 0.0, 0.0])
+        self.target_vel_angular = np.array([0.0, 0.0, 0.0]) 
+
+        # Internal collection of obstacles & labels
+        self.obstacles = []
+
+        # Physics constants
+        self.accel_limit = 0.5   # m/s^2 (how fast boat can accelerate)
+        self.drag = 0.05         # proportional velocity loss per second
+        self.yaw_accel_limit = 0.3   # rad/s^2
+        self.yaw_drag = 0.1
+
+        self.map_publisher = self.create_publisher(OccupancyGrid, 'world_map', 10)
+        self.boat_pose_publisher = self.create_publisher(PoseStamped, 'boat_pose', 10)
+        self.vel_sub = self.create_subscription(
+            Twist,
+            "cmd_vel",
+            self.cmd_vel_callback,
+            10
+        )
+
+        self.simulation_speed = 0.1 # time step when an update is made i.e. if 0.1, then 10 updates are made every second.
+        self.world_clock = self.create_timer(self.simulation_speed, self.update)
+        self.step = 0
+
+    def cmd_vel_callback(self, msg):
+        """
+        Saves the new target boat velocity.
+        @param msg command velocity
+        """
+        self.target_vel_linear = np.array([msg.linear.x, msg.linear.y, msg.linear.z])
+        self.target_vel_angular = np.array([msg.angular.x, msg.angular.y, msg.angular.z])
+
+    def integrate_orientation(self, q, roll_rate, pitch_rate, yaw_rate, dt):
+        """
+        Covnert small-angle rotation to quaternion
+        """
+        delta_q = quaternion_from_euler(
+            roll_rate * dt,
+            pitch_rate * dt,
+            yaw_rate * dt
+        )
+        return quaternion_multiply(q, delta_q)
+    
+    def update(self):
+        """
+        Progress the simulation through a time step. Called self.simulation_speed times per second.
+        """
+
+        dt = self.simulation_speed
+
+         # --- 1. Update forward speed toward target speed ---
+        # target_vel_linear is now just (forward_speed, 0, 0) in boat's frame
+        target_speed = self.target_vel_linear[0]  # forward speed in m/s
+
+        # Accelerate toward target
+        speed_diff = target_speed - self.boat_vel_linear[0]
+        accel_step = np.clip(speed_diff, -self.accel_limit * dt, self.accel_limit * dt)
+        self.boat_vel_linear[0] += accel_step
+
+        # Apply drag
+        self.boat_vel_linear[0] -= self.boat_vel_linear[0] * self.drag * dt
+
+        # --- 2. Update angular velocity toward target yaw rate ---
+        target_yaw_rate = self.target_vel_angular[2]
+        
+
+        yaw_diff = target_yaw_rate - self.boat_vel_angular[2]
+        yaw_accel_step = np.clip(yaw_diff, -self.yaw_accel_limit * dt, self.yaw_accel_limit * dt)
+        self.boat_vel_angular[2] += yaw_accel_step
+        self.boat_vel_angular[2] -= self.boat_vel_angular[2] * self.yaw_drag * dt
+
+        # --- 3. Move boat forward in heading direction ---
+        # Convert current orientation to yaw
+        _, _, yaw = euler_from_quaternion(self.boat_pose_orientation)
+
+        # World-frame velocity from forward speed
+        forward_speed = self.boat_vel_linear[0]
+        vx_world = forward_speed * np.cos(yaw)
+        vy_world = forward_speed * np.sin(yaw)
+
+        # Update position in world frame
+        self.boat_pose_position[0] += vx_world * dt
+        self.boat_pose_position[1] += vy_world * dt
+
+        # --- 4. Update orientation from yaw rate ---
+        yaw += self.boat_vel_angular[2] * dt
+        self.boat_pose_orientation = quaternion_from_euler(0, 0, yaw)
+
+        self.publish_topics()
+        
+        
+        self.step += 1
+
+    def publish_topics(self):
+        """
+        Publishes world map and boat position
+        """
+
+        # Create, populate, and publish OccupancyGrid message
+        map_msg = OccupancyGrid()
+        map_msg.header.stamp = self.get_clock().now().to_msg()
+        map_msg.header.frame_id = self.global_frame_id
+        map_msg.info = MapMetaData()
+        map_msg.info.width = self.map_width
+        map_msg.info.height = self.map_height
+        map_msg.info.resolution = self.grid_resolution
+        map_msg.data = self.grid_data.flatten().astype(np.int8).tolist()
+
+        # Publish current boat pose
+        boat_pose_msg = PoseStamped()
+        boat_pose_msg.header.stamp = self.get_clock().now().to_msg()
+        boat_pose_msg.header.frame_id = self.global_frame_id
+        boat_pose_msg.pose.position=Point(x=self.boat_pose_position[0], 
+                                     y=self.boat_pose_position[1], 
+                                     z=self.boat_pose_position[2])
+        boat_pose_msg.pose.orientation=Quaternion(x=self.boat_pose_orientation[0],
+                                             y=self.boat_pose_orientation[1], 
+                                             z=self.boat_pose_orientation[2], 
+                                             w=self.boat_pose_orientation[3])
+        
+        # Publish current obstacles? Maybe, not sure if needed.
+
+        # Fire em off
+        # self.get_logger().info("publishing topics")
+        self.map_publisher.publish(map_msg)
+        self.boat_pose_publisher.publish(boat_pose_msg)
+        # self.get_logger().info("published topics")
+
+
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    sim_node = BoatSimulation()
+    rclpy.spin(sim_node)
+    sim_node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
