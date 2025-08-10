@@ -12,7 +12,7 @@ from tf_transformations import euler_from_quaternion, quaternion_from_euler, qua
 class BoatSimulation(Node):
 
     def __init__(self):
-        super().__init__('sim_node')
+        super().__init__('sim_engine')
 
         self.map_height = 400
         self.map_width = 400
@@ -83,7 +83,7 @@ class BoatSimulation(Node):
 
         dt = self.simulation_speed
 
-         # --- 1. Update forward speed toward target speed ---
+        # --- 1. Update forward speed toward target speed ---
         # target_vel_linear is now just (forward_speed, 0, 0) in boat's frame
         target_speed = self.target_vel_linear[0]  # forward speed in m/s
 
@@ -98,7 +98,6 @@ class BoatSimulation(Node):
         # --- 2. Update angular velocity toward target yaw rate ---
         target_yaw_rate = self.target_vel_angular[2]
         
-
         yaw_diff = target_yaw_rate - self.boat_vel_angular[2]
         yaw_accel_step = np.clip(yaw_diff, -self.yaw_accel_limit * dt, self.yaw_accel_limit * dt)
         self.boat_vel_angular[2] += yaw_accel_step
@@ -153,16 +152,10 @@ class BoatSimulation(Node):
                                              z=self.boat_pose_orientation[2], 
                                              w=self.boat_pose_orientation[3])
         
-        # Publish current obstacles? Maybe, not sure if needed.
+        # TODO: Publish current obstacles? Maybe, not sure if needed.
 
-        # Fire em off
-        # self.get_logger().info("publishing topics")
         self.map_publisher.publish(map_msg)
         self.boat_pose_publisher.publish(boat_pose_msg)
-        # self.get_logger().info("published topics")
-
-
-
 
 def main(args=None):
     rclpy.init(args=args)
