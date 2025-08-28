@@ -1,7 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from visualization_msgs.msg import Marker
-from std_msgs.msg import Header, ColorRGBA
+from std_msgs.msg import Header
 from geometry_msgs.msg import Vector3, Point
 
 class BuoyCourse(Node):
