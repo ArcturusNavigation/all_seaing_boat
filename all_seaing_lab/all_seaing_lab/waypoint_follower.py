@@ -21,13 +21,16 @@ class WaypointFollower(Node):
             .double_array_value
         )
         Kpid_theta = (
-            self.declare_parameter("Kpid_theta", [1.0, 0.0, 0.0])
+            self.declare_parameter("Kpid_theta", [1.3, 0.0, 0.0])
             .get_parameter_value()
             .double_array_value
         )
         self.x_pid = PIDController(*Kpid_x)
+        self.x_pid.set_effort_max(1.2)
         self.y_pid = PIDController(*Kpid_y)
+        self.y_pid.set_effort_max(1.2)
         self.theta_pid = CircularPID(*Kpid_theta)
+        self.theta_pid.set_effort_max(1.5)
         self.prev_update_time = self.get_clock().now()
 
         self.cmd_vel_publisher = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -47,7 +50,7 @@ class WaypointFollower(Node):
         self.goal_pose = Pose()
         self.boat_pose = Pose()
         
-        timer_period = 0.5  # seconds
+        timer_period = 0.1  # seconds
         self.timer = self.create_timer(timer_period, self.timer_callback)
 
     def boat_callback(self, msg):
