@@ -150,8 +150,6 @@ class BoatSimulation(Node):
                                              y=self.boat_pose_orientation[1], 
                                              z=self.boat_pose_orientation[2], 
                                              w=self.boat_pose_orientation[3])
-        
-        # TODO: Publish current obstacles? Maybe, not sure if needed.
 
         self.map_publisher.publish(map_msg)
         self.boat_pose_publisher.publish(boat_pose_msg)
