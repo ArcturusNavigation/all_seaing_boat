@@ -19,16 +19,6 @@ def generate_launch_description():
         executable="teleop_controller"
     )
 
-    waypoint_follower_node = Node(
-        package="all_seaing_lab",
-        executable="waypoint_follower"
-    )
-
-    task_node = Node(
-        package="all_seaing_lab",
-        executable="follow_path"
-    )
-
     keyboard_ld = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([
@@ -72,8 +62,6 @@ def generate_launch_description():
             rviz_node,
             sim_node,
             teleop_controller_node,
-            waypoint_follower_node,
-            task_node,
             keyboard_ld,
             buoy_course
         ]
