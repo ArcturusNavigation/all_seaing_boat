@@ -1,16 +1,14 @@
 import rclpy
 from rclpy.node import Node
 
-# from std_msgs.msg import String
-from nav_msgs.msg import MapMetaData, OccupancyGrid, Odometry
-from geometry_msgs.msg import PoseStamped, Twist, Point, Vector3, Quaternion
+from nav_msgs.msg import MapMetaData, OccupancyGrid
+from geometry_msgs.msg import PoseStamped, Twist, Point, Quaternion
 import numpy as np
 
 from tf_transformations import euler_from_quaternion, quaternion_from_euler, quaternion_multiply
 
 
 class BoatSimulation(Node):
-
     def __init__(self):
         super().__init__('sim_engine')
 
