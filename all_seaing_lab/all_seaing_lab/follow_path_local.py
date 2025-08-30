@@ -75,7 +75,7 @@ class FollowBuoyPID(ActionServerBase):
 
         # update from subs
         self.bboxes = [] # To be commented out
-        self.obstacleboxes = []
+        self.obstacles = []
 
         self.timer_period = 1 / 30.0
 
@@ -147,7 +147,7 @@ class FollowBuoyPID(ActionServerBase):
 
     # New version with obstacles
     def map_cb(self, msg):
-        self.obstacleboxes = msg.obstacles
+        self.obstacles = msg.obstacles
 
     def control_loop(self):
         # Access point through name.point.x, etc.?
@@ -162,14 +162,17 @@ class FollowBuoyPID(ActionServerBase):
         green_y = None
         red_y = None
 
-        for box in self.obstacleboxes:
-            location = box.local_point
+        self.get_logger().info(f'# obstacles: {len(self.obstacles)}')
+        for obs in self.obstacles:
+            location = obs.local_point
+            if location.point.x < 0.5:
+                continue
             dist = math.sqrt(location.point.x**2 + location.point.y**2)
-            if box.label in self.green_labels and dist < green_dist:
+            if obs.label in self.green_labels and dist < green_dist:
                 self.get_logger().info('GREEN THERE')
                 green_dist = dist
                 green_location = location
-            elif box.label in self.red_labels and dist < red_dist:
+            elif obs.label in self.red_labels and dist < red_dist:
                 self.get_logger().info('RED THERE')
                 red_dist = dist
                 red_location = location

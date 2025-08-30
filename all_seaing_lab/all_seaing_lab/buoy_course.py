@@ -42,6 +42,7 @@ class BuoyCourse(Node):
 
         red_marker = self._buoys_to_marker(red_buoys_x, red_buoys_y, "red")
         green_marker = self._buoys_to_marker(green_buoys_x, green_buoys_y, "green")
+        self.publish_map(red_buoys_x, red_buoys_y, green_buoys_x, green_buoys_y)
 
         self.red_publisher.publish(red_marker)
         self.green_publisher.publish(green_marker)
@@ -53,6 +54,28 @@ class BuoyCourse(Node):
                                                  pose_msg.pose.orientation.y,
                                                  pose_msg.pose.orientation.z,
                                                  pose_msg.pose.orientation.w])[2]
+    
+    def publish_map(self, red_buoys_x, red_buoys_y, green_buoys_x, green_buoys_y):
+        obs_map = ObstacleMap()
+        obs_map.header.stamp = self.get_clock().now().to_msg()
+        obs_map.header.frame_id = "map"
+        obs_map.local_header.stamp = self.get_clock().now().to_msg()
+        obs_map.local_header.frame_id = "base_link"
+        local_obs_map = ObstacleMap()
+        local_obs_map.header = obs_map.header
+        local_obs_map.local_header = obs_map.local_header
+        id = 0
+        for buoy_x, buoy_y in zip(red_buoys_x, red_buoys_y):
+            obs_map.obstacles.append(self.buoy_to_global_obstacle(buoy_x, buoy_y, 1, id))
+            local_obs_map.obstacles.append(self.buoy_to_local_obstacle(buoy_x, buoy_y, 1, id))
+            id += 1
+        for buoy_x, buoy_y in zip(green_buoys_x, green_buoys_y):
+            obs_map.obstacles.append(self.buoy_to_global_obstacle(buoy_x, buoy_y, 2, id))
+            local_obs_map.obstacles.append(self.buoy_to_local_obstacle(buoy_x, buoy_y, 2, id))
+            id += 1
+        
+        self.local_publisher.publish(local_obs_map)
+        self.global_publisher.publish(obs_map)
 
     def _buoys_to_marker(self, buoys_x, buoys_y, color):
         """
@@ -73,23 +96,8 @@ class BuoyCourse(Node):
         else:
             marker.color.b = 1.0
 
-        obs_map = ObstacleMap()
-        obs_map.header.stamp = self.get_clock().now().to_msg()
-        obs_map.header.frame_id = "map"
-        obs_map.local_header.stamp = self.get_clock().now().to_msg()
-        obs_map.local_header.frame_id = "base_link"
-        local_obs_map = ObstacleMap()
-        local_obs_map.header = obs_map.header
-        local_obs_map.local_header = obs_map.local_header
-        id = 0
         for buoy_x, buoy_y in zip(buoys_x, buoys_y):
             marker.points.append(Point(x=buoy_x, y=buoy_y))
-            obs_map.obstacles.append(self.buoy_to_global_obstacle(buoy_x, buoy_y, (1 if color == "red" else 2), id))
-            local_obs_map.obstacles.append(self.buoy_to_local_obstacle(buoy_x, buoy_y, (1 if color == "red" else 2), id))
-            id += 1
-        
-        self.local_publisher.publish(local_obs_map)
-        self.global_publisher.publish(obs_map)
 
         return marker
 
