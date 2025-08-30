@@ -1,5 +1,6 @@
 # from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+import launch_ros
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.actions import Node
 from launch.conditions import IfCondition
@@ -51,6 +52,58 @@ def generate_launch_description():
         condition=IfCondition(launch_rviz),
     )
 
+    control_mux = launch_ros.actions.Node(
+        package="all_seaing_controller",
+        executable="control_mux.py",
+    )
+
+    controller_server = launch_ros.actions.Node(
+        package="all_seaing_controller",
+        executable="controller_server.py",
+        parameters=[
+            {"global_frame_id": "map"},
+            {"robot_frame_id": "base_link"},
+            {"Kpid_x": [1.0, 0.0, 0.0]},
+            {"Kpid_y": [1.0, 0.0, 0.0]},
+            {"Kpid_theta": [1.0, 0.0, 0.0]},
+            {"max_vel": [5.0, 3.0, 1.5]},
+        ],
+        output="screen",
+    )
+
+    navigation_server = launch_ros.actions.Node(
+        package="all_seaing_navigation",
+        executable="navigation_server.py",
+        parameters=[
+            {"global_frame_id": "map"},
+            {"robot_frame_id": "base_link"},
+        ],
+        output="screen",
+    )
+
+    run_tasks = launch_ros.actions.Node(
+        package="all_seaing_autonomy",
+        executable="run_tasks.py",
+    )
+
+    task_init_server = launch_ros.actions.Node(
+        package="all_seaing_autonomy",
+        executable="task_init.py",
+        parameters=[{"is_sim": True}],
+    )
+
+    follow_buoy_path = launch_ros.actions.Node(
+        package="all_seaing_autonomy",
+        executable="follow_buoy_path.py",
+        parameters=[
+            {"safe_margin": 0.2},
+        ],
+        remappings=[
+            ("obstacle_map/labeled", "obstacle_map/global"),
+            ("odometry/filtered", "odometry/tracked"),
+        ]
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -63,6 +116,11 @@ def generate_launch_description():
             sim_node,
             teleop_controller_node,
             keyboard_ld,
-            buoy_course
+            buoy_course,
+            control_mux,
+            controller_server,
+            navigation_server,
+            run_tasks,
+            task_init_server
         ]
     )
