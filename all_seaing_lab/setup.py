@@ -29,7 +29,8 @@ setup(
     entry_points={
         'console_scripts': [
             'sim_engine = all_seaing_lab.sim_engine:main',
-            'teleop_controller = all_seaing_lab.teleop_controller:main'
+            'teleop_controller = all_seaing_lab.teleop_controller:main',
+            'buoy_course = all_seaing_lab.buoy_course:main',
         ],
     },
 )

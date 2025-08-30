@@ -7,8 +7,6 @@ from launch.actions import DeclareLaunchArgument,IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution, LaunchConfiguration
 
-from ament_index_python.packages import get_package_share_directory
-
 
 def generate_launch_description():
     sim_node = Node(
@@ -31,6 +29,17 @@ def generate_launch_description():
         ]),
     )
 
+    course_name = LaunchConfiguration("course")
+    launch_course = "false" if course_name == "none" else "true"
+    buoy_course = Node(
+        package="all_seaing_lab",
+        executable="buoy_course",
+        parameters=[PathJoinSubstitution([
+            FindPackageShare('all_seaing_lab'), 'config', course_name])
+        ],
+        condition=IfCondition(launch_course),
+    )
+
     launch_rviz = LaunchConfiguration("launch_rviz")
     rviz_node = Node(
         package="rviz2",
@@ -47,10 +56,13 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "launch_rviz", default_value="true", choices=["true", "false"]
             ),
+            DeclareLaunchArgument(
+                "course", default_value="none", description='file name of the course to be used in sim (.yaml)'
+            ),
             rviz_node,
             sim_node,
             teleop_controller_node,
             keyboard_ld,
-            
+            buoy_course
         ]
     )
