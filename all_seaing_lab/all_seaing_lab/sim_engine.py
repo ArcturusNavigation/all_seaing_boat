@@ -2,11 +2,11 @@ import rclpy
 from rclpy.node import Node
 
 from nav_msgs.msg import MapMetaData, OccupancyGrid
-from geometry_msgs.msg import PoseStamped, Twist, Point, Quaternion
+from geometry_msgs.msg import PoseStamped, Twist, Point, Quaternion, TransformStamped
+from tf2_ros import TransformBroadcaster
 import numpy as np
 
 from tf_transformations import euler_from_quaternion, quaternion_from_euler, quaternion_multiply
-
 
 class BoatSimulation(Node):
     def __init__(self):
@@ -50,6 +50,8 @@ class BoatSimulation(Node):
             self.cmd_vel_callback,
             10
         )
+        self.boat_pose_broadcaster = TransformBroadcaster(self)
+
 
         self.simulation_speed = 0.1 # time step when an update is made i.e. if 0.1, then 10 updates are made every second.
         self.world_clock = self.create_timer(self.simulation_speed, self.update)
@@ -150,6 +152,15 @@ class BoatSimulation(Node):
                                              y=self.boat_pose_orientation[1], 
                                              z=self.boat_pose_orientation[2], 
                                              w=self.boat_pose_orientation[3])
+        
+        # TF map->base_link
+        t = TransformStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = "map"
+        t.child_frame_id = "base_link"
+        t.transform.translation.x = self.boat_pose_position[0]
+        t.transform.translation.y = self.boat_pose_position[1]
+        t.transform.rotation = boat_pose_msg.pose.orientation
 
         self.map_publisher.publish(map_msg)
         self.boat_pose_publisher.publish(boat_pose_msg)
