@@ -31,6 +31,8 @@ setup(
             'sim_engine = all_seaing_lab.sim_engine:main',
             'teleop_controller = all_seaing_lab.teleop_controller:main',
             'buoy_course = all_seaing_lab.buoy_course:main',
+            'follow_path_local = all_seaing_lab.follow_path_local:main',
+            'follow_path_global = all_seaing_lab.follow_path_global:main',
         ],
     },
 )

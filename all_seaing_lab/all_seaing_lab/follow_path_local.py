@@ -18,12 +18,12 @@ import math
 
 class FollowBuoyPID(ActionServerBase):
     def __init__(self):
-        super().__init__("follow_path_pid_server")
+        super().__init__("follow_path_local_server")
 
         self._action_server = ActionServer(
             self,
             Task,
-            "follow_buoy_pid",
+            "follow_buoy_path",
             execute_callback=self.execute_callback,
             cancel_callback=self.default_cancel_callback,
         )
@@ -61,6 +61,10 @@ class FollowBuoyPID(ActionServerBase):
             .get_parameter_value()
             .double_array_value
         )
+        self.declare_parameter("forward_speed", 5.0)
+        self.declare_parameter("max_yaw", 1.0)
+        self.forward_speed = self.get_parameter("forward_speed").get_parameter_value().double_value
+        self.max_yaw_rate = self.get_parameter("max_yaw").get_parameter_value().double_value
 
         self.x_pid = PIDController(*Kpid_x)
         self.y_pid = PIDController(*Kpid_y)
@@ -68,25 +72,6 @@ class FollowBuoyPID(ActionServerBase):
         self.theta_pid.set_effort_min(-self.max_vel[2])
         self.theta_pid.set_effort_max(self.max_vel[2])
         self.prev_update_time = self.get_clock().now()
-
-
-        # pid_vals = (
-        #     self.declare_parameter("pid_vals", [0.003, 0.0, 0.0])
-        #     .get_parameter_value()
-        #     .double_array_value
-        # )
-
-
-        self.declare_parameter("forward_speed", 5.0)
-        self.declare_parameter("max_yaw", 1.0)
-        self.forward_speed = self.get_parameter("forward_speed").get_parameter_value().double_value
-        self.max_yaw_rate = self.get_parameter("max_yaw").get_parameter_value().double_value
-
-        # self.pid = PIDController(*pid_vals)
-        # self.pid.set_effort_min(-self.max_yaw_rate)
-        # self.pid.set_effort_max(self.max_yaw_rate)
-        # self.prev_update_time = self.get_clock().now()
-        self.time_last_seen_buoys = self.get_clock().now().nanoseconds / 1e9
 
         # update from subs
         self.bboxes = [] # To be commented out
@@ -121,8 +106,6 @@ class FollowBuoyPID(ActionServerBase):
 
         self.green_labels.add(2)
         self.red_labels.add(1)
-
-
 
     def set_pid_setpoints(self, x, y, theta):
         self.x_pid.set_setpoint(x)
@@ -167,163 +150,40 @@ class FollowBuoyPID(ActionServerBase):
         self.obstacleboxes = msg.obstacles
 
     def control_loop(self):
-        # if self.width is None or len(self.obstacleboxes) == 0:
-        #     self.get_logger().info(f"no obstalces or zero width {self.width}, {len(self.obstacleboxes)}")
-        #     return
-
         # Access point through name.point.x, etc.?
         red_location = None
-        red_area = 0
+        red_dist = 100000
 
         green_location = None
-        green_area = 0
+        green_dist = 100000
 
-        # yellow_center_x = None
-        yellow_area = 0
-        # yellow_left = None
-        # yellow_right = None
-        yellow_location = None
-
-        # handle balancing box sizes later ?
-        # ex. same size but offset should be y shift
-        # but diff size should be a rotation and probably
-        # a bit of a y shift too?
-
-        # Still use this logic to find the largest buoy, since probably most relative to path
-        forward = False
-        for box in self.obstacleboxes:
-            area = (box.bbox_max.x - box.bbox_min.x) * (box.bbox_max.y - box.bbox_min.y)
-            location = box.local_point
-            if box.label in self.green_labels and area > green_area:
-                self.get_logger().info('GREEN THERE')
-                green_area = area
-                green_location = location
-            elif box.label in self.red_labels and area > red_area:
-                self.get_logger().info('RED THERE')
-                red_area = area
-                red_location = location
-            elif box.label in self.yellow_labels and area > yellow_area:
-                yellow_area = area
-                yellow_location = location
-
-        # if we only see one of red / green, rotate
-        # if we see neither, log + kill
-        # if red_center_x is None or green_center_x is None:
-        #     if (self.get_clock().now().nanoseconds / 1e9) - self.time_last_seen_buoys > 1.0:
-        #         self.get_logger().info("no more buoys killing")
-        #         self.result = True
-        #     return
-
-
-        # if red_center_x is not None and green_center_x is not None:
-        #     self.red_green_ratio = red_area / green_area
-        # keep going in the same direction if the ratio is too far off.
-        # if self.red_green_ratio is not None and (self.red_green_ratio > 0.5 or self.red_green_ratio < 0.5):
-        #     yaw0 = True
-        #     return
-
-        # Need to change this logic to something less crude, pure pursuit was suggested in task description
-        # Currently uses location in image, need to change to each obstacle's local points
-
-        # can update, not impt rn
-        # left_x = red_center_x
-        # right_x = green_center_x
-        # img_ctr = self.width / 2.0
-
-        # Used when only see one buoy
-        correction_value = (self.max_distance_apart + self.min_distance_apart)/2 * self.meters_feet_conversion
-        self.waypoint_x = None
-        self.waypoint_y = None
-        red_x = None
-        red_y = None
         green_x = None
+        red_x = None
         green_y = None
+        red_y = None
 
-        if green_location is not None or red_location is not None:
-            # Set imaginary location for any buoys we do not see
-            if green_location is None:
-                self.get_logger().info("green was None")
-                red_y = red_location.point.y
-                red_x = red_location.point.x
-                if self.right_color == "green":
-                    green_y = red_y - correction_value
-                    green_x = red_x
-                elif self.right_color == "red":
-                    green_y = red_y + correction_value
-                    green_x = red_x
-            elif red_location is None:
-                self.get_logger().info("red was None")
-                green_y = green_location.point.y
-                green_x = green_location.point.x
-                if self.right_color == "green":
-                    red_y = green_y + correction_value
-                    red_x = green_x
-                if self.right_color == "red":
-                    red_y = green_y - correction_value
-                    red_x = green_x
-            else:
-                green_y = green_location.point.y
-                green_x = green_location.point.x
-                red_y = red_location.point.y
-                red_x = red_location.point.x
+        for box in self.obstacleboxes:
+            location = box.local_point
+            dist = math.sqrt(location.point.x**2 + location.point.y**2)
+            if box.label in self.green_labels and dist < green_dist:
+                self.get_logger().info('GREEN THERE')
+                green_dist = dist
+                green_location = location
+            elif box.label in self.red_labels and dist < red_dist:
+                self.get_logger().info('RED THERE')
+                red_dist = dist
+                red_location = location
 
-            # Main logic of the follow the path
-            # If no yellows, just the midpt
-            if yellow_location == None:
-                self.waypoint_y = (red_y + green_y)/2
-                self.waypoint_x = (red_x + green_x)/2
-            # If yellow, check if relevant and have two different cases if is
-            else:
-                yellow_x = yellow_location.point.x
-                yellow_y = yellow_location.point.y
-                front = None
-                # Sets whether yellow is in front or behind of the line of red, green intersection
-                if self.right_color == "green":
-                    front = self.ccw((green_y, green_x), (yellow_y, yellow_x), (red_y, red_x))
-                else:
-                    front = self.ccw((red_y, red_x), (yellow_y, yellow_x), (green_y, green_x))
-                # Checks if yellow is between the green and red buoys
-                if (self.right_color == "green" and red_y < yellow_y < green_y) or (self.right_color == "red" and green_y < yellow_y < red_y):
-                    # If in front, finds intersection of red, green buoy line and its perpendicular line passing through yellow's location
-                    if front:
-                        red_to_yellow = (yellow_x - red_x, yellow_y -red_y)
-                        red_to_green = (green_x - red_x, green_y - red_y)
-                        dot_prod = red_to_yellow[0] * red_to_green[0] + red_to_yellow[1] * red_to_green[1]
-                        const_fact = dot_prod / self.dist_squared(red_to_green)
-                        intersection_x = red_to_green[0] * const_fact + red_x
-                        intersection_y = red_to_green[1] * const_fact + red_y
+        if green_location is not None and red_location is not None:
+            green_y = green_location.point.y
+            green_x = green_location.point.x
+            red_y = red_location.point.y
+            red_x = red_location.point.x
 
+            self.waypoint_y = (red_y + green_y)/2
+            self.waypoint_x = (red_x + green_x)/2
 
-                        square_distance_red = (intersection_y - red_y)**2 + (intersection_x - red_x)**2
-                        square_distance_green = (intersection_y - green_y)**2 + (intersection_x - green_x)**2
-                        if square_distance_red >= square_distance_green:
-                            self.waypoint_x = (red_x + intersection_x)/2
-                            self.waypoint_y = (red_y + intersection_y)/2
-                        else:
-                            self.waypoint_x = (green_x + intersection_x)/2
-                            self.waypoint_y = (green_y + intersection_y)/2
-                    # If behind, then just finds largest red, yellow or green, yellow dist and takes the midpt
-                    else:
-                        red_to_yellow = (yellow_x - red_x, yellow_y -red_y)
-                        green_to_yellow = (yellow_x - green_x, yellow_y -green_y)
-                        ry_dist = self.dist_squared(red_to_yellow)
-                        gy_dist = self.dist_squared(green_to_yellow)
-                        if ry_dist >= gy_dist:
-                            self.waypoint_x = (red_x + yellow_x)/2
-                            self.waypoint_y = (red_y + yellow_y)/2
-                        else:
-                            self.waypoint_x = (green_x + yellow_x)/2
-                            self.waypoint_y = (green_y + yellow_y)/2
-                # If not in between the red and green buoys, treats it like there is no obstacle
-                else:
-                    self.waypoint_y = (red_y + green_y)/2
-                    self.waypoint_x = (red_x + green_x)/2
-
-
-        yaw0 = False
-        # if self.waypoint_x is None or (math.sqrt(self.waypoint_x**2)+ math.sqrt(self.waypoint_y**2)) < self.front_limit:
         if green_x is None and red_x is None:
-            yaw0 = True
             if (self.get_clock().now().nanoseconds / 1e9) - self.time_last_seen_buoys > 100.0:
                 self.get_logger().info("no more buoys killing")
                 # wait 1 second, then send a stopping control msg (in case we haven't fully passed the buoys)
@@ -358,104 +218,6 @@ class FollowBuoyPID(ActionServerBase):
         control_msg.twist.linear.y = y_vel
         control_msg.twist.angular.z = theta_output
         self.control_pub.publish(control_msg)
-
-
-# OLD CODE DON'T NEED?
-
-#         if left_x is None:
-#  #           if forward and (self.get_clock().now()-self.forward_start).nanoseconds < 2e9:
-#  #               yaw0 = True
-#  #               left_x = 0 # this doesn't actually do anything, just to prevent erroring gate_ctr calculation
-#             if right_x < img_ctr:
-#                 left_x = right_x - (self.width * 0.75)
-#             else:
-#                 left_x = 0
-#         if right_x is None:
-#             # if forward and (self.get_clock().now()-self.forward_start).nanoseconds < 2e9:
-#               #   yaw0 = True
-#                 # right_x = 0
-#             if left_x >= img_ctr:
-#                 right_x = left_x + (self.width * 0.75)
-#             else:
-#                 right_x = self.width - 1
-
-#         gate_ctr = (left_x + right_x) / 2.0
-#         left_ctr_thresh = img_ctr * 0.45
-#         right_ctr_thresh = img_ctr * 0.55
-#         offset = None
-
-        #Current obstacle avoidance that should be changed
-        # Currently based on location in image not local points
-
-        # yellow buoy exists
-        # if yellow_left is not None:
-        #     # if yellow_left <= right_ctr_thresh and yellow_right >= right_ctr_thresh:
-
-        #     yellow_ctr = (yellow_left + yellow_right) / 2.0
-        #     if yellow_left <= img_ctr and yellow_right >= img_ctr and left_x <= yellow_ctr <= right_x:
-        #         # yellow buoy is in the middle (on both sides of camera)
-        #         left_diff = img_ctr - yellow_left
-        #         right_diff = yellow_right - img_ctr
-        #         if left_diff < right_diff:
-        #             # yellow buoy is on the right side
-        #             # want to turn left
-        #             # goal is to get yellow_left to align with right_ctr_thresh
-        #             # should overshoot a bit ?
-        #             # bc this would stop running once its past the center.
-        #             self.get_logger().info("yellow buoy on the right side. turning left. ")
-        #             offset = yellow_left - right_ctr_thresh
-
-        #         else:
-        #             self.get_logger().info("yellow buoy is on the left side. turning right.")
-        #             offset = yellow_right - left_ctr_thresh
-        #             # yellow buoy is on the left side
-        #             # want to turn right
-        #             # goal is to get yellow_right to align with left_ctr_thresh
-        # if offset is None:
-        #     offset = gate_ctr - self.width / 2.0
-
-
-        #     if yellow_left > img_ctr and yellow_right > img_ctr:
-        #         # both vals are on the right of center
-
-        #     elif yellow_left <= img_ctr and yellow_right <= img_ctr:
-        #         # both vals are on the left of center
-        # if yellow_center_x is not None:
-        #     if yellow_area > green_area*0.8 or yellow_area < green_area*2:
-        #         if yellow_center_x > left_x and yellow_center_x < right_x:
-        #             if gate_ctr > yellow_center_x:
-        #                 ctr = (right_x + yellow_center_x) / 2.0
-        #                 offset = ctr - self.width / 2.0
-        #             elif gate_ctr <= yellow_center_x:
-        #                 ctr = (left_x + yellow_center_x) / 2.0
-        #                 offset = ctr - self.width / 2.0
-                # else:
-                #     # self.width / 2.0 is img ctr
-                #     offset = gate_ctr - self.width / 2.0
-
-
-
-        # self.width / 2.0 is img ctr
-        # offset = gate_ctr - self.width / 2.0
-
-        # OLD PID CODE!!!! (346-361)
-
-        # dt = (self.get_clock().now() - self.prev_update_time).nanoseconds / 1e9
-        # self.pid.update(offset, dt)
-        # self.get_logger().info(f"offset: {offset}")
-        # yaw_rate = self.pid.get_effort()
-        # if yaw_rate < 0.0: # 3/6: if turning rihgt, make turn larger
-        #     yaw_rate = max(yaw_rate * self.scale_right, -self.max_yaw_rate)
-        # if yaw0:
-        #     yaw_rate = 0.0
-        # self.prev_update_time = self.get_clock().now()
-
-        # control_msg = ControlOption()
-        # control_msg.priority = 1
-        # control_msg.twist.linear.x = float(self.forward_speed)
-        # control_msg.twist.linear.y = 0.0
-        # control_msg.twist.angular.z = float(yaw_rate)
-        # self.control_pub.publish(control_msg)
 
     def execute_callback(self, goal_handle):
         self.start_process("follow buoy pid starting")

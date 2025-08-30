@@ -34,7 +34,7 @@ class InternalBuoyPair:
 
 class FollowBuoyPath(ActionServerBase):
     def __init__(self):
-        super().__init__("follow_path_server")
+        super().__init__("follow_path_global_server")
 
         self._action_server = ActionServer(
             self,
@@ -47,9 +47,6 @@ class FollowBuoyPath(ActionServerBase):
 
         self.map_sub = self.create_subscription(
             ObstacleMap, "obstacle_map/global", self.map_cb, 10
-        )
-        self.odometry_sub = self.create_subscription(
-            Odometry, "/odometry/filtered", self.odometry_cb, 10
         )
         self.follow_path_client = ActionClient(self, FollowPath, "follow_path")
         self.waypoint_marker_pub = self.create_publisher(
