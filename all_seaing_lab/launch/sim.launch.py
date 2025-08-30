@@ -94,13 +94,10 @@ def generate_launch_description():
 
     follow_buoy_path = launch_ros.actions.Node(
         package="all_seaing_autonomy",
-        executable="follow_buoy_path.py",
+        executable="follow_buoy_path_global.py", # TOGGLE IN FOR GLOBAL MAP PART
+        # executable="follow_buoy_path_local.py", # TOGGLE IN FOR LOCAL MAP PART
         parameters=[
             {"safe_margin": 0.2},
-        ],
-        remappings=[
-            ("obstacle_map/labeled", "obstacle_map/global"),
-            ("odometry/filtered", "odometry/tracked"),
         ]
     )
 
@@ -121,6 +118,7 @@ def generate_launch_description():
             controller_server,
             navigation_server,
             run_tasks,
-            task_init_server
+            task_init_server,
+            follow_buoy_path,
         ]
     )

@@ -12,6 +12,7 @@ from nav_msgs.msg import Odometry
 from std_msgs.msg import Header, ColorRGBA
 from visualization_msgs.msg import Marker, MarkerArray
 from all_seaing_common.action_server_base import ActionServerBase
+from tf_transformations import quaternion_from_euler, euler_from_quaternion
 
 import math
 import os
@@ -45,7 +46,7 @@ class FollowBuoyPath(ActionServerBase):
         )
 
         self.map_sub = self.create_subscription(
-            ObstacleMap, "obstacle_map/labeled", self.map_cb, 10
+            ObstacleMap, "obstacle_map/global", self.map_cb, 10
         )
         self.odometry_sub = self.create_subscription(
             Odometry, "/odometry/filtered", self.odometry_cb, 10
@@ -64,9 +65,6 @@ class FollowBuoyPath(ActionServerBase):
         self.declare_parameter("choose_every", 5)
         self.declare_parameter("use_waypoint_client", False)
         self.declare_parameter("planner", "astar")
-        self.declare_parameter("bypass_planner", False)
-
-        self.bypass_planner = self.get_parameter("bypass_planner").get_parameter_value().bool_value
 
         self.declare_parameter("buoy_pair_dist_thres", 1.0)
         self.buoy_pair_dist_thres = self.get_parameter("buoy_pair_dist_thres").get_parameter_value().double_value
@@ -350,29 +348,8 @@ class FollowBuoyPath(ActionServerBase):
     def pair_to_pose(self, pair):
         return Pose(position=Point(x=pair[0], y=pair[1]))
     
-    def quaternion_from_euler(self, roll, pitch, yaw):
-        """
-        Converts euler roll, pitch, yaw to quaternion (w in last place)
-        quat = [x, y, z, w]
-        Bellow should be replaced when porting for ROS 2 Python tf_conversions is done.
-        """
-        cy = math.cos(yaw * 0.5)
-        sy = math.sin(yaw * 0.5)
-        cp = math.cos(pitch * 0.5)
-        sp = math.sin(pitch * 0.5)
-        cr = math.cos(roll * 0.5)
-        sr = math.sin(roll * 0.5)
-
-        q = [0] * 4
-        q[0] = cy * cp * cr + sy * sp * sr
-        q[1] = cy * cp * sr - sy * sp * cr
-        q[2] = sy * cp * sr + cy * sp * cr
-        q[3] = sy * cp * cr - cy * sp * sr
-
-        return q
-    
     def pair_angle_to_pose(self, pair, angle):
-        quat = self.quaternion_from_euler(0, 0, angle)
+        quat = self.quaternion_from_euler([0, 0, angle])
         return Pose(
             position=Point(x=pair[0], y=pair[1]),
             orientation=Quaternion(x=quat[0], y=quat[2], z=quat[2], w=quat[3]),
