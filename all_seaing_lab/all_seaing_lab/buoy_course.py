@@ -49,10 +49,10 @@ class BuoyCourse(Node):
     def pose_cb(self, pose_msg: PoseStamped):
         self.nav_x = pose_msg.pose.position.x
         self.nav_y = pose_msg.pose.position.y
-        self.nav_heading = euler_from_quaternion(pose_msg.pose.orientation.x,
+        self.nav_heading = euler_from_quaternion([pose_msg.pose.orientation.x,
                                                  pose_msg.pose.orientation.y,
                                                  pose_msg.pose.orientation.z,
-                                                 pose_msg.pose.orientation.w)
+                                                 pose_msg.pose.orientation.w])[2]
 
     def _buoys_to_marker(self, buoys_x, buoys_y, color):
         """
@@ -90,7 +90,7 @@ class BuoyCourse(Node):
         
         self.local_publisher.publish(local_obs_map)
         self.global_publisher.publish(obs_map)
-        
+
         return marker
 
     def compute_transform_from_to(self, from_pos, to_pos):
@@ -112,11 +112,11 @@ class BuoyCourse(Node):
     def buoy_to_local_obstacle(self, global_x, global_y, label, id):
         # robot->buoy = robot->map->buoy = inv(map->robot)@(map->buoy)
         local_x, local_y, _ = self.compose_transforms(self.compute_transform_from_to((self.nav_x, self.nav_y, self.nav_heading), (0.0,0.0,0.0)),(global_x, global_y, 0.0))
-        return Obstacle(id=id, label=label, local_point=PointStamped(stamp=Header(stamp=self.get_clock().now().to_msg(), frame_id="base_link"), point=Point(x=local_x, y=local_y)))
+        return Obstacle(id=id, label=label, local_point=PointStamped(header=Header(stamp=self.get_clock().now().to_msg(), frame_id="base_link"), point=Point(x=local_x, y=local_y)))
         
     def buoy_to_global_obstacle(self, x, y, label, id):
         obs = self.buoy_to_local_obstacle(x, y, label, id)
-        obs.global_point=PointStamped(stamp=Header(stamp=self.get_clock().now().to_msg(), frame_id="map"), point=Point(x=x, y=y))
+        obs.global_point=PointStamped(header=Header(stamp=self.get_clock().now().to_msg(), frame_id="map"), point=Point(x=x, y=y))
         return obs
 
 def main():

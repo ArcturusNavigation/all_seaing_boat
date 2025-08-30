@@ -164,6 +164,7 @@ class BoatSimulation(Node):
 
         self.map_publisher.publish(map_msg)
         self.boat_pose_publisher.publish(boat_pose_msg)
+        self.boat_pose_broadcaster.sendTransform(t)
 
 def main(args=None):
     rclpy.init(args=args)
