@@ -68,17 +68,12 @@ class FollowBuoyPath(ActionServerBase):
 
         self.bypass_planner = self.get_parameter("bypass_planner").get_parameter_value().bool_value
 
-        self.declare_parameter("is_sim", False)
-        self.is_sim = self.get_parameter("is_sim").get_parameter_value().bool_value
-
         self.declare_parameter("buoy_pair_dist_thres", 1.0)
         self.buoy_pair_dist_thres = self.get_parameter("buoy_pair_dist_thres").get_parameter_value().double_value
 
         self.robot_pos = (0, 0)
 
         self.declare_parameter("safe_margin", 0.2)
-
-        bringup_prefix = get_package_share_directory("all_seaing_bringup")
 
         self.first_buoy_pair = True
 
@@ -89,25 +84,8 @@ class FollowBuoyPath(ActionServerBase):
         self.green_labels = set()
         self.red_labels = set()
 
-        self.declare_parameter(
-            "color_label_mappings_file", 
-            os.path.join(
-                bringup_prefix, "config", "perception", "color_label_mappings.yaml"
-            ),
-        )
-
-        color_label_mappings_file = self.get_parameter(
-            "color_label_mappings_file"
-        ).value
-        with open(color_label_mappings_file, "r") as f:
-            label_mappings = yaml.safe_load(f)
-        # hardcoded from reading YAML
-        if self.is_sim:
-            self.green_labels.add(label_mappings["green"])
-            self.red_labels.add(label_mappings["red"])
-        else:
-            self.green_labels.add(label_mappings["green_buoy"])
-            self.red_labels.add(label_mappings["red_buoy"])
+        self.green_labels.add(2)
+        self.red_labels.add(1)
         
         self.sent_waypoints = set()
 
@@ -224,23 +202,6 @@ class FollowBuoyPath(ActionServerBase):
                     id=(4 * i) + 2,
                 )
             )
-            # marker_array.markers.append(
-            #     Marker(
-            #         type=Marker.CYLINDER,
-            #         pose=Pose(
-            #             position=Point(
-            #                 x=point.position.x,
-            #                 y=point.position.y,
-            #             )
-            #         ),
-            #         header=Header(frame_id=self.global_frame_id),
-            #         scale=Vector3(
-            #             x=radius, y=radius, z=1.0
-            #         ),
-            #         color=ColorRGBA(g=1.0, a=0.5),
-            #         id=(4 * i) + 3,
-            #     )
-            # )
             i += 1
         return marker_array
 
@@ -457,6 +418,9 @@ class FollowBuoyPath(ActionServerBase):
         and the next_pair() function to compute the next pair from each one in the sequence,
         as long as there is a next pair from the buoys that are stored in the obstacle map.
         """
+        # get robot position
+        x,y,_ = self.get_robot_pose()
+        self.robot_pos = (x,y)
         # split the buoys into red and green
         green_buoys, red_buoys = self.split_buoys(self.obstacles)
         self.get_logger().debug(
@@ -649,10 +613,7 @@ class FollowBuoyPath(ActionServerBase):
         and find the starting pair, and then (if the starting buoys are successfully computed) form
         the buoy pair / waypoint sequence
         """
-        self.obstacles = msg.obstacles
-
-    def odometry_cb(self, msg):
-        self.robot_pos = (msg.pose.pose.position.x, msg.pose.pose.position.y)
+        self.obstacles = msg.obstacles        
 
     def execute_callback(self, goal_handle):
 
