@@ -66,7 +66,7 @@ def generate_launch_description():
             {"Kpid_x": [1.0, 0.0, 0.0]},
             {"Kpid_y": [1.0, 0.0, 0.0]},
             {"Kpid_theta": [1.0, 0.0, 0.0]},
-            {"max_vel": [5.0, 3.0, 1.5]},
+            {"max_vel": [0.7, 0.3, 1.5]},
         ],
         output="screen",
     )
@@ -77,6 +77,8 @@ def generate_launch_description():
         parameters=[
             {"global_frame_id": "map"},
             {"robot_frame_id": "base_link"},
+        ],remappings=[
+            ("/dynamic_map", "/world_map")
         ],
         output="screen",
     )
@@ -94,10 +96,10 @@ def generate_launch_description():
 
     follow_buoy_path = launch_ros.actions.Node(
         package="all_seaing_lab",
-        executable="follow_path_local", # TOGGLE IN FOR LOCAL MAP PART
-        # executable="follow_path_global", # TOGGLE IN FOR GLOBAL MAP PART
+        # executable="follow_path_local", # TOGGLE IN FOR LOCAL MAP PART
+        executable="follow_path_global", # TOGGLE IN FOR GLOBAL MAP PART
         parameters=[
-            {"safe_margin": 0.2},
+            # ADD PARAMETER VALUES TO BE TUNED
         ]
     )
 

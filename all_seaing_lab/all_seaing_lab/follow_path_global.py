@@ -59,7 +59,7 @@ class FollowBuoyPath(ActionServerBase):
         self.declare_parameter("theta_threshold", 180.0)
         self.declare_parameter("goal_tol", 0.5)
         self.declare_parameter("obstacle_tol", 50)
-        self.declare_parameter("choose_every", 5)
+        self.declare_parameter("choose_every", 1)
         self.declare_parameter("use_waypoint_client", False)
         self.declare_parameter("planner", "astar")
 
@@ -97,6 +97,8 @@ class FollowBuoyPath(ActionServerBase):
         self.thresh_dist = 5.0
 
         self.sent_forward = False
+
+        self.pair_to = None
 
     def norm_squared(self, vec, ref=(0, 0)):
         return vec[0] ** 2 + vec[1] ** 2
@@ -199,16 +201,36 @@ class FollowBuoyPath(ActionServerBase):
             )
             i += 1
         return marker_array
+    
+    def follow_path(self):
+        # get robot position
+        x,y,_ = self.get_robot_pose()
+        self.robot_pos = (x,y)
 
-    def setup_buoys(self):
-        """
-        Runs when the first obstacle map is received, filters the buoys that are in front of
-        the robot (x>0 in local coordinates) and finds (and stores) the closest green one and
-        the closest red one, and because the robot is in the starting position these
-        are the front buoys of the robot starting box.
-        """
-        self.get_logger().debug("Setting up starting buoys!")
-        self.get_logger().debug(
+        # Check if we passed that pair of buoys (the robot is in front of the pair), then move on to the next one
+        left_coords = self.ob_coords(self.pair_to.left)
+        right_coords = self.ob_coords(self.pair_to.right)
+        x, y = self.midpoint(left_coords, right_coords)
+        rx, ry = self.robot_pos
+        if self.ccw(
+            left_coords,
+            right_coords, 
+            self.robot_pos,
+        ) or (x - rx) ** 2 + (y - ry) ** 2 <= self.thresh_dist:
+            if self.find_waypoint():
+                self.time_last_seen_buoys = self.get_clock().now().nanoseconds / 1e9
+                return True
+            else:
+                if (self.get_clock().now().nanoseconds / 1e9) - self.time_last_seen_buoys > 5.0:
+                    self.result = True
+                return False
+
+        else:
+            return True
+
+    def find_waypoint(self):
+        self.get_logger().info("Finding new follow path waypoint")
+        self.get_logger().info(
             f"list of obstacles: {self.obs_to_pos_label(self.obstacles)}"
         )
 
@@ -218,42 +240,39 @@ class FollowBuoyPath(ActionServerBase):
         # lambda function that filters the buoys that are in front of the robot
         obstacles_in_front = lambda obs: [
             ob for ob in obs
-            if (self.is_sim and ob.local_point.point.x > 0) or (not self.is_sim and ob.local_point.point.y > 0)
+            if ob.local_point.point.x > 0
         ]
         # take the green and red buoys that are in front of the robot
         green_buoys, red_buoys = obstacles_in_front(green_init), obstacles_in_front(red_init)
-        self.get_logger().debug(
-            f"initial red buoys: {red_buoys}, green buoys: {green_buoys}"
+        self.get_logger().info(
+            f"red buoys: {red_buoys}, green buoys: {green_buoys}"
         )
         if len(red_buoys) == 0 or len(green_buoys) == 0:
-            self.get_logger().debug("No starting buoy pairs!")
+            self.get_logger().info("No buoy pairs!")
             return False
 
         # From the red buoys that are in front of the robot, take the one that is closest to it.
         # And do the same for the green buoys.
-        # This pair is the front pair of the starting box of the robot.
         closest_red = self.get_closest_to((0, 0), red_buoys, local=True)
         closest_green = self.get_closest_to((0, 0), green_buoys, local=True)
-        if self.ccw(
-            (0, 0),
-            self.ob_coords(closest_green, local=True),
-            self.ob_coords(closest_red, local=True),
-        ):
-            self.red_left = True
-            self.starting_buoys = InternalBuoyPair(
-                self.get_closest_to((0, 0), red_buoys, local=True),
-                self.get_closest_to((0, 0), green_buoys, local=True),
-            )
-            self.get_logger().info("RED BUOYS LEFT, GREEN BUOYS RIGHT")
-        else:
-            self.red_left = False
-            self.starting_buoys = InternalBuoyPair(
-                self.get_closest_to((0, 0), green_buoys, local=True),
-                self.get_closest_to((0, 0), red_buoys, local=True),
-            )
-            self.get_logger().info("GREEN BUOYS LEFT, RED BUOYS RIGHT")
-        self.pair_to = self.starting_buoys
-        # self.backup_pair = None
+        self.pair_to = InternalBuoyPair(
+            closest_red,
+            closest_green,
+        )
+
+        # send waypoint
+        waypoint = self.midpoint_pair(self.pair_to)
+        self.send_waypoint_to_server(waypoint)
+
+        # visualize waypoint
+        self.waypoint_marker_pub.publish(MarkerArray(markers=[Marker(id=0,action=Marker.DELETEALL)]))
+        self.waypoint_marker_pub.publish(self.buoy_pairs_to_markers([(self.pair_to.left, self.pair_to.right, self.pair_angle_to_pose(
+            pair=waypoint,
+            angle=(
+                math.atan(self.ob_coords(self.pair_to.right)[1] - self.ob_coords(self.pair_to.left)[1]) /
+                (self.ob_coords(self.pair_to.right)[0] - self.ob_coords(self.pair_to.left)[0])
+            ) + (math.pi / 2),
+        ), self.norm(self.ob_coords(self.pair_to.left), self.ob_coords(self.pair_to.right))/2 - self.safe_margin)]))
         return True
 
     def ccw(self, a, b, c):
@@ -285,301 +304,34 @@ class FollowBuoyPath(ActionServerBase):
             ) and min(self.norm((self.ob_coords(buoy)[0]-self.ob_coords(pair.left)[0], self.ob_coords(buoy)[1]-self.ob_coords(pair.left)[1])), self.norm((self.ob_coords(buoy)[0]-self.ob_coords(pair.right)[0], self.ob_coords(buoy)[1]-self.ob_coords(pair.right)[1]))) > self.buoy_pair_dist_thres
         ]
 
-    def next_pair(self, prev_pair, red, green):
-        """
-        Returns the next buoy pair from the previous pair,
-        by checking the closest one to the middle of the previous buoy pair that's in front of the pair
-        """
-
-        front_red = self.filter_front_buoys(prev_pair, red)
-        front_green = self.filter_front_buoys(prev_pair, green)
-        self.get_logger().debug(
-            f"robot pos: {self.robot_pos}, front red buoys: {self.obs_to_pos(front_red)}, front green buoys: {self.obs_to_pos(front_green)}"
-        )
-
-        if not front_red or not front_green:
-            prev_coords = self.ob_coords(prev_pair.left), self.ob_coords(
-                prev_pair.right
-            )
-            red_coords = self.obs_to_pos(red)
-            green_coords = self.obs_to_pos(green)
-
-            self.get_logger().debug(
-                f"buoys:  {prev_coords} \nred: {red_coords} \ngreen: {green_coords}"
-            )
-            self.get_logger().debug(f"robot: {self.robot_pos}")
-            self.get_logger().debug("Missing at least one front buoy")
-            return None
-
-        if prev_pair is not None:
-            prev_pair_midpoint = self.midpoint_pair(prev_pair)
-            self.get_logger().debug(f"prev pair midpoint: {prev_pair_midpoint}")
-            if self.red_left:
-                return InternalBuoyPair(
-                    self.get_closest_to(prev_pair_midpoint, front_red),
-                    self.get_closest_to(prev_pair_midpoint, front_green),
-                )
-            else:
-                return InternalBuoyPair(
-                    self.get_closest_to(prev_pair_midpoint, front_green),
-                    self.get_closest_to(prev_pair_midpoint, front_red),
-                )
-        else:
-            self.get_logger().debug("No previous pair!")
-            # TODO: change those to: self.get_closest_to((0,0), red/green, local=True) to not have to use odometry position but just local obstacle positions (wrt the robot)?
-            self.get_logger().debug(
-                f"next buoys: red: {self.get_closest_to(self.robot_pos, red)}, green: {self.get_closest_to(self.robot_pos, green)}"
-            )
-            # if there is no previous pair, just take the closest red and green buoys
-            if self.red_left:
-                return InternalBuoyPair(
-                    self.get_closest_to(self.robot_pos, red),
-                    self.get_closest_to(self.robot_pos, green),
-                )
-            else:
-                return InternalBuoyPair(
-                    self.get_closest_to(self.robot_pos, green),
-                    self.get_closest_to(self.robot_pos, red),
-                )
-
     def pair_to_pose(self, pair):
         return Pose(position=Point(x=pair[0], y=pair[1]))
     
     def pair_angle_to_pose(self, pair, angle):
-        quat = self.quaternion_from_euler([0, 0, angle])
+        quat = quaternion_from_euler(0, 0, angle)
         return Pose(
             position=Point(x=pair[0], y=pair[1]),
             orientation=Quaternion(x=quat[0], y=quat[2], z=quat[2], w=quat[3]),
         )
     
-    def buoy_pairs_angle(self, p1, p2, loc=False):
-        p1_left, p1_right = (self.ob_coords(p1.left, local=loc), self.ob_coords(p1.right, local=loc))
-        p2_left, p2_right = (self.ob_coords(p2.left, local=loc), self.ob_coords(p2.right, local=loc))
-        p1_diff = (p1_right[0]-p1_left[0], p1_right[1]-p1_left[1])
-        p2_diff = (p2_right[0]-p2_left[0], p2_right[1]-p2_left[1])
-        # TODO: change angle to be away from the boat, use dot product
-        angle = math.acos((p1_diff[0]*p2_diff[0]+p1_diff[1]*p2_diff[1])/(self.norm(p1_diff)*self.norm(p2_diff)))
-        return angle
-    
-    def buoy_pairs_distance(self, p1, p2, mode="min", loc=False):
-        p1_left, p1_right = self.ob_coords(p1.left, local=loc), self.ob_coords(p1.right, local=loc)
-        p2_left, p2_right = self.ob_coords(p2.left, local=loc), self.ob_coords(p2.right, local=loc)
-        if mode=="mid":
-            p1_mid = ((p1_right[0]+p1_left[0])/2.0, (p1_right[1]+p1_left[1])/2.0)
-            p2_mid = ((p2_right[0]+p2_left[0])/2.0, (p2_right[1]+p2_left[1])/2.0)
-            dist = self.norm((p2_mid[0]-p1_mid[0], p2_mid[1]-p1_mid[1]))
-        else:
-            left_diff = (p2_left[0]-p1_left[0], p2_left[1]-p1_left[1])
-            right_diff = (p2_right[0]-p1_right[0], p2_right[1]-p1_right[1])
-            dist = min(self.norm(left_diff), self.norm(right_diff))
-        return dist
-    
-    def better_buoy_pair_transition(self, p_old, p_new, p_ref):
-        # return ((self.buoy_pairs_distance(p_ref, p_new) <= self.buoy_pair_dist_thres and 
-        #         self.buoy_pairs_distance(p_ref, p_new, mode="min") > self.buoy_pairs_distance(p_ref, p_old, mode="min")) or
-        return (self.buoy_pairs_distance(p_ref, p_new) > self.buoy_pair_dist_thres and
-                (self.buoy_pairs_distance(p_ref, p_old) <= self.buoy_pair_dist_thres or
-                 self.buoy_pairs_angle(p_ref, p_old) > self.buoy_pairs_angle(p_ref, p_new)))
-
-    def generate_waypoints(self):
-        """
-        Runs every time a new obstacle map is received, keeps
-        track of the pair of buoys the robot is heading towards,
-        checks if it passed it (the robot is in front of the pair of buoys)
-        (#TODO: add a margin of error such that the robot is considered to have passed the buoys if it's
-        a bit in front of them) and update the pair accordingly, and afterwards computes
-        the sequence of future waypoints based on the first waypoint
-        and the next_pair() function to compute the next pair from each one in the sequence,
-        as long as there is a next pair from the buoys that are stored in the obstacle map.
-        """
-        # get robot position
-        x,y,_ = self.get_robot_pose()
-        self.robot_pos = (x,y)
-        # split the buoys into red and green
-        green_buoys, red_buoys = self.split_buoys(self.obstacles)
-        self.get_logger().debug(
-            f"robot pos: {self.robot_pos}, red buoys: {self.obs_to_pos(red_buoys)}, green buoys: {self.obs_to_pos(green_buoys)}"
-        )
-
-        if self.pair_to is None:
-            self.get_logger().debug("No pair to go to.")
-            return
-        
-        # TODO: Match the previous pair of buoys to the new obstacle map (in terms of global position) to eliminate any big drift that may mess up the selection of the next pair
-        
-        """
-        Update the current sequence if better transitions are found
-        """
-        ind = 0
-        while ind < len(self.buoy_pairs):
-            next_pair = self.next_pair(self.buoy_pairs[ind], red_buoys, green_buoys)
-            if next_pair is not None and ((ind == (len(self.buoy_pairs)-1) and self.buoy_pairs_distance(self.buoy_pairs[ind], next_pair) > self.buoy_pair_dist_thres) or (ind < (len(self.buoy_pairs)-1) and self.better_buoy_pair_transition(self.buoy_pairs[ind+1],next_pair,self.buoy_pairs[ind]))):
-                self.buoy_pairs = self.buoy_pairs[:ind+1]
-                self.waypoints = self.waypoints[:ind+1]
-                self.buoy_pairs.append(next_pair)
-                self.waypoints.append(self.midpoint_pair(next_pair))
-            ind += 1
-
-        passed_previous = False
-        # Check if we passed that pair of buoys (the robot is in front of the pair), then move on to the next one
-        left_coords = self.ob_coords(self.pair_to.left)
-        right_coords = self.ob_coords(self.pair_to.right)
-        x, y = self.midpoint(left_coords, right_coords)
-        rx, ry = self.robot_pos
-        if self.ccw(
-            left_coords,
-            right_coords, 
-            self.robot_pos,
-        ) or (x - rx) ** 2 + (y - ry) ** 2 <= self.thresh_dist:
-            passed_previous = True
-            # new_pair = self.next_pair(self.pair_to, red_buoys, green_buoys)
-            # if new_pair is not None:
-            #     self.pair_to = new_pair
-            #     self.time_last_seen_buoys = time.time()
-            # else:
-            #     # if self.backup_pair is not None:
-            #     #     self.get_logger().info("Using previously seen backup pair")
-            #     #     self.pair_to = self.backup_pair
-            #     #     self.backup_pair = None
-            #     # else:
-            #     self.get_logger().debug("No next buoy pair to go to.")
-            #     if time.time() - self.time_last_seen_buoys > 1:
-            #         self.result = True
-            #     return
-
-        if self.first_buoy_pair:
-            self.buoy_pairs = [self.pair_to]
-            self.waypoints = [self.midpoint_pair(self.pair_to)]
-        elif passed_previous:
-            if len(self.buoy_pairs)>=2:
-                self.buoy_pairs = self.buoy_pairs[1:]
-                self.waypoints = self.waypoints[1:]
-                self.time_last_seen_buoys = time.time()
-                self.pair_to = self.buoy_pairs[0]
-                self.sent_forward = False
-            elif len(self.buoy_pairs) == 1:
-                if time.time() - self.time_last_seen_buoys > 1:
-                    if self.sent_forward:
-                        return
-                    buoy_pair = self.buoy_pairs[0]
-                    left_coords = self.ob_coords(buoy_pair.left)
-                    right_coords = self.ob_coords(buoy_pair.right)
-                    # get the perp forward direction
-                    forward_dir = (right_coords[1] - left_coords[1], left_coords[0] - right_coords[0])
-                    forward_dir_norm = math.sqrt(forward_dir[0]**2 + forward_dir[1]**2)
-                    forward_dir = (-forward_dir[0]/forward_dir_norm, -forward_dir[1]/forward_dir_norm)
-                    midpt = self.midpoint_pair(buoy_pair)
-                    scale = self.thresh_dist
-                    wpt = (midpt[0] + scale * forward_dir[0], midpt[1] + scale * forward_dir[1])
-
-                    self.send_waypoint_to_server(wpt)
-
-                    self.sent_forward = True
-
-                    return
-                    
-            # buoy_pair = buoy_pairs[0]
-            # left_coords = self.ob_coords(buoy_pair.left)
-            # right_coords = self.ob_coords(buoy_pair.right)
-            # # get the perp forward direction
-            # forward_dir = (right_coords[1] - left_coords[1], left_coords[0] - right_coords[0])
-
-            else:
-                # below is equivalent to the previous case as we update the sequence before we go to the next buoy pair
-                # if self.next_pair(self.pair_to, red_buoys, green_buoys) != None:
-                #     self.get_logger().info("FOUND NEW NEXT BUOY PAIR")
-                #     self.pair_to = self.next_pair(self.pair_to, red_buoys, green_buoys)
-                #     self.buoy_pairs = [self.pair_to]
-                #     self.waypoints = [self.midpoint_pair(self.pair_to)]
-                #     self.time_last_seen_buoys = time.time()
-                # else:
-                if time.time() - self.time_last_seen_buoys > 5:
-                    self.result = True
-                return
-
-        # self.get_logger().debug(f"pair to: {len(self.buoy_pairs)}")
-
-        # """
-        # Form a sequence of buoy pairs (and the respective waypoints) that form a path that the robot can follow
-        # will terminate if we run out of either green or red buoys
-        # """
-
-        # next_buoy_pair = self.next_pair(self.buoy_pairs[-1], red_buoys, green_buoys)
-        # while next_buoy_pair is not None:
-        #     self.buoy_pairs.append(next_buoy_pair)
-        #     self.waypoints.append(self.midpoint_pair(next_buoy_pair))
-        #     next_buoy_pair = self.next_pair(self.buoy_pairs[-1], red_buoys, green_buoys)
-
-        # if(len(self.buoy_pairs)>=2):
-        #     # choose the next pair with the least angle compared to the current one as a backup, to hopefully mitigate diagonal ones caused by duplicates, also take distance into account
-        #     if self.backup_pair is None or self.better_buoy_pair_transition(self.backup_pair, self.buoy_pairs[1], self.pair_to):
-        #         self.backup_pair = self.buoy_pairs[1]
-        #         self.get_logger().info(f"Updated backup buoy pair with angle: {self.buoy_pairs_angle(self.pair_to, self.backup_pair)} and distance: {self.buoy_pairs_distance(self.pair_to, self.backup_pair)}")
-
-        self.get_logger().debug(f"Waypoints: {self.waypoints}")
-
-        self.waypoint_marker_pub.publish(MarkerArray(markers=[Marker(id=0,action=Marker.DELETEALL)]))
-        self.waypoint_marker_pub.publish(self.buoy_pairs_to_markers([(pair.left, pair.right, self.pair_angle_to_pose(
-            pair=wpt,
-            angle=(
-                math.atan(self.ob_coords(pair.right)[1] - self.ob_coords(pair.left)[1]) /
-                (self.ob_coords(pair.right)[0] - self.ob_coords(pair.left)[0])
-            ) + (math.pi / 2),
-        ), self.norm(self.ob_coords(pair.left), self.ob_coords(pair.right))/2 - self.safe_margin) for wpt, pair in zip(self.waypoints, self.buoy_pairs)]))
-
-        if self.waypoints:
-            waypoint = self.waypoints[0]
-            self.get_logger().debug(
-                f"cur_waypoint: {waypoint}, sent_waypoints: {self.sent_waypoints}"
-            )
-            self.get_logger().debug(f"len(waypoints): {len(self.waypoints)}")
-
-            # check if waypoint is close enough (check_dist) to some previous waypoint
-            # passed_waypoint = False
-            # check_dist = 5.0  # TODO: FIX magic number T_T
-            # for sent_waypoint in self.sent_waypoints:
-            #     if math.dist(waypoint, sent_waypoint) < check_dist:
-            #         passed_waypoint = True
-            
-            
-
-
-            # if not passed_waypoint:
-            if passed_previous or self.first_buoy_pair:
-                self.send_waypoint_to_server(waypoint)
-                self.sent_waypoints.add(waypoint)
-                self.first_buoy_pair = False
-    
     def send_waypoint_to_server(self, waypoint):
-        # self.get_logger().info('SENDING WAYPOINT TO SERVER')
         # sending waypoints to navigation server
-        if not self.bypass_planner:
-            self.follow_path_client.wait_for_server()
-            goal_msg = FollowPath.Goal()
-            goal_msg.planner = self.get_parameter("planner").value
-            goal_msg.x = waypoint[0]
-            goal_msg.y = waypoint[1]
-            goal_msg.xy_threshold = self.get_parameter("xy_threshold").value
-            goal_msg.theta_threshold = self.get_parameter("theta_threshold").value
-            goal_msg.goal_tol = self.get_parameter("goal_tol").value
-            goal_msg.obstacle_tol = self.get_parameter("obstacle_tol").value
-            goal_msg.choose_every = self.get_parameter("choose_every").value
-            goal_msg.is_stationary = True
-            self.follow_path_client.wait_for_server()
-            self.send_goal_future = self.follow_path_client.send_goal_async(
-                goal_msg
-            )
-        else:
-            goal_msg = Waypoint.Goal()
-            goal_msg.xy_threshold = self.get_parameter("xy_threshold").value
-            goal_msg.theta_threshold = self.get_parameter("theta_threshold").value
-            goal_msg.x = waypoint[0]
-            goal_msg.y = waypoint[1]
-            goal_msg.ignore_theta = True
-            goal_msg.is_stationary = True
-            self.result = False
-            self.waypoint_client.wait_for_server()
-            self.send_goal_future = self.waypoint_client.send_goal_async(goal_msg)
+        self.follow_path_client.wait_for_server()
+        goal_msg = FollowPath.Goal()
+        goal_msg.planner = self.get_parameter("planner").value
+        self.get_logger().info(f'Sending waypoint: {waypoint}')
+        goal_msg.x = waypoint[0]
+        goal_msg.y = waypoint[1]
+        goal_msg.xy_threshold = self.get_parameter("xy_threshold").value
+        goal_msg.theta_threshold = self.get_parameter("theta_threshold").value
+        goal_msg.goal_tol = self.get_parameter("goal_tol").value
+        goal_msg.obstacle_tol = self.get_parameter("obstacle_tol").value
+        goal_msg.choose_every = self.get_parameter("choose_every").value
+        goal_msg.is_stationary = True
+        self.follow_path_client.wait_for_server()
+        self.send_goal_future = self.follow_path_client.send_goal_async(
+            goal_msg
+        )
 
     def map_cb(self, msg):
         """
@@ -594,15 +346,20 @@ class FollowBuoyPath(ActionServerBase):
         self.start_process("Follow buoy path started!")
 
         while rclpy.ok() and self.obstacles is None:
-            time.sleep(1.0) # TODO: maybe change this
+            time.sleep(0.2) # TODO: maybe change this
             if goal_handle.is_cancel_requested:
                 goal_handle.canceled()
                 return Task.Result()
         
         success = False
         while not success:
-            success = self.setup_buoys()
-            time.sleep(1.0)
+            success = self.find_waypoint()
+            time.sleep(0.1)
+            # Check if we should abort/cancel if a new goal arrived
+            if self.should_abort():
+                self.end_process("New request received. Aborting path following.")
+                goal_handle.abort()
+                return Task.Result()
             if goal_handle.is_cancel_requested:
                 goal_handle.canceled()
                 return Task.Result()
@@ -621,7 +378,7 @@ class FollowBuoyPath(ActionServerBase):
                 goal_handle.canceled()
                 return Task.Result()
             
-            self.generate_waypoints()
+            self.follow_path()
 
             time.sleep(self.timer_period)
 

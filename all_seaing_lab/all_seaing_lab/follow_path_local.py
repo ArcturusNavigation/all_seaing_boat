@@ -187,7 +187,7 @@ class FollowBuoyPID(ActionServerBase):
             self.waypoint_x = (red_x + green_x)/2
 
         if green_x is None and red_x is None:
-            if (self.get_clock().now().nanoseconds / 1e9) - self.time_last_seen_buoys > 100.0:
+            if (self.get_clock().now().nanoseconds / 1e9) - self.time_last_seen_buoys > 5.0:
                 self.get_logger().info("no more buoys killing")
                 # wait 1 second, then send a stopping control msg (in case we haven't fully passed the buoys)
                 time.sleep(1)

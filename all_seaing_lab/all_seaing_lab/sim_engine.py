@@ -14,7 +14,7 @@ class BoatSimulation(Node):
 
         self.map_height = 400
         self.map_width = 400
-        self.grid_resolution = 1.0  # m/cell
+        self.grid_resolution = 0.1  # m/cell
         self.global_frame_id = "map"
 
         

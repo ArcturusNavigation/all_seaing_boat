@@ -9,7 +9,6 @@ Panels:
         - /TF1
         - /TF1/Frames1
         - /ObstacleMap1
-        - /ObstacleMap1/Status1
       Splitter Ratio: 0.5
     Tree Height: 389
   - Class: rviz_common/Selection
@@ -173,6 +172,31 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /obstacle_map/global
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces:
+        "": true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /waypoint_markers
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Marker
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /action_marker
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -219,7 +243,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 5.664358139038086
+      Distance: 8.588056564331055
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
