@@ -14,6 +14,8 @@ install(PROGRAMS
     ${PROJECT_NAME}/pid_controller.py
     ${PROJECT_NAME}/sim_engine.py
     ${PROJECT_NAME}/teleop_controller.py
+    ${PROJECT_NAME}/waypoint_follower.py
+    ${PROJECT_NAME}/follow_path.py
     DESTINATION lib/${PROJECT_NAME}
 )
 
