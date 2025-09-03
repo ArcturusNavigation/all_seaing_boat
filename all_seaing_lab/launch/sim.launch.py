@@ -1,4 +1,3 @@
-# from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 import launch_ros
 from launch_ros.substitutions import FindPackageShare
@@ -6,18 +5,28 @@ from launch_ros.actions import Node
 from launch.conditions import IfCondition
 from launch.actions import DeclareLaunchArgument,IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import PathJoinSubstitution, LaunchConfiguration
+from launch.substitutions import PathJoinSubstitution, PythonExpression, LaunchConfiguration
 
 
 def generate_launch_description():
     sim_node = Node(
         package="all_seaing_lab",
-        executable="sim_engine"
+        executable="sim_engine.py"
     )
 
     teleop_controller_node = Node(
         package="all_seaing_lab",
-        executable="teleop_controller"
+        executable="teleop_controller.py"
+    )
+
+    waypoint_follower_node = Node(
+        package="all_seaing_lab",
+        executable="waypoint_follower.py"
+    )
+
+    task_node = Node(
+        package="all_seaing_lab",
+        executable="follow_path.py"
     )
 
     keyboard_ld = IncludeLaunchDescription(
@@ -31,14 +40,15 @@ def generate_launch_description():
     )
 
     course_name = LaunchConfiguration("course")
-    launch_course = "false" if course_name == "none" else "true"
     buoy_course = Node(
         package="all_seaing_lab",
-        executable="buoy_course",
+        executable="buoy_course.py",
         parameters=[PathJoinSubstitution([
             FindPackageShare('all_seaing_lab'), 'config', course_name])
         ],
-        condition=IfCondition(launch_course),
+        condition=IfCondition(
+            PythonExpression(['"', course_name, '" != "none"'])
+        ),
     )
 
     launch_rviz = LaunchConfiguration("launch_rviz")
@@ -114,6 +124,8 @@ def generate_launch_description():
             rviz_node,
             sim_node,
             teleop_controller_node,
+            waypoint_follower_node,
+            task_node,
             keyboard_ld,
             buoy_course,
             control_mux,
