@@ -16,6 +16,8 @@ install(PROGRAMS
     ${PROJECT_NAME}/teleop_controller.py
     ${PROJECT_NAME}/waypoint_follower.py
     ${PROJECT_NAME}/follow_path.py
+    ${PROJECT_NAME}/follow_path_local.py
+    ${PROJECT_NAME}/follow_path_global.py
     DESTINATION lib/${PROJECT_NAME}
 )
 
