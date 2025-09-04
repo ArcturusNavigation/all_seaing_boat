@@ -6,15 +6,11 @@ from rclpy.executors import MultiThreadedExecutor
 
 from all_seaing_interfaces.action import Task
 from all_seaing_controller.pid_controller import PIDController, CircularPID
-from ament_index_python.packages import get_package_share_directory
-from all_seaing_interfaces.msg import LabeledBoundingBox2DArray, ControlOption, ObstacleMap
+from all_seaing_interfaces.msg import ControlOption, ObstacleMap
 from all_seaing_common.action_server_base import ActionServerBase
-from sensor_msgs.msg import CameraInfo
+from tf_transformations import quaternion_from_euler, euler_from_quaternion
 
-import os
-import yaml
 import time
-import math
 
 class FollowBuoyPID(ActionServerBase):
     def __init__(self):
@@ -56,6 +52,8 @@ class FollowBuoyPID(ActionServerBase):
             .get_parameter_value()
             .double_array_value
         )
+
+        # TODO: Add custom parameters
         
         self.x_pid = PIDController(*Kpid_x)
         self.y_pid = PIDController(*Kpid_y)
@@ -68,6 +66,8 @@ class FollowBuoyPID(ActionServerBase):
 
         self.green_label = 2
         self.red_label = 1
+
+        # TODO: Fill out init code
 
     def set_pid_setpoints(self, x, y, theta):
         self.x_pid.set_setpoint(x)
