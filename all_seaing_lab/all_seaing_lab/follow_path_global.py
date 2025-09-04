@@ -53,14 +53,11 @@ class FollowBuoyPath(ActionServerBase):
             MarkerArray, "waypoint_markers", 10
         )
 
-        self.waypoint_client = ActionClient(self, Waypoint, "waypoint")
-
         self.declare_parameter("xy_threshold", 2.0)
         self.declare_parameter("theta_threshold", 180.0)
         self.declare_parameter("goal_tol", 0.5)
         self.declare_parameter("obstacle_tol", 50)
         self.declare_parameter("choose_every", 1)
-        self.declare_parameter("use_waypoint_client", False)
         self.declare_parameter("planner", "astar")
 
         self.declare_parameter("buoy_pair_dist_thres", 1.0)

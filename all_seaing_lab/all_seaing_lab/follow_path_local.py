@@ -74,7 +74,6 @@ class FollowBuoyPID(ActionServerBase):
         self.prev_update_time = self.get_clock().now()
 
         # update from subs
-        self.bboxes = [] # To be commented out
         self.obstacles = []
 
         self.timer_period = 1 / 30.0
@@ -140,10 +139,6 @@ class FollowBuoyPID(ActionServerBase):
             - left[1] * right[0]
         )
         return area > 0
-
-    # Replaced by obstacle map
-    def bbox_callback(self, msg):
-        self.bboxes = msg.boxes
 
     # New version with obstacles
     def map_cb(self, msg):
