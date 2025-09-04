@@ -86,8 +86,6 @@ class FollowBuoyPath(ActionServerBase):
         self.timer_period = 1/60
         self.time_last_seen_buoys = time.time()
 
-        self.obstacles = None
-
         self.buoy_pairs = []
         self.obstacles = []
 
@@ -331,11 +329,6 @@ class FollowBuoyPath(ActionServerBase):
         )
 
     def map_cb(self, msg):
-        """
-        When a new map is received, check if it is the first one (we haven't set up the starting buoys)
-        and find the starting pair, and then (if the starting buoys are successfully computed) form
-        the buoy pair / waypoint sequence
-        """
         self.obstacles = msg.obstacles        
 
     def execute_callback(self, goal_handle):
@@ -343,7 +336,7 @@ class FollowBuoyPath(ActionServerBase):
         self.start_process("Follow buoy path started!")
 
         while rclpy.ok() and self.obstacles is None:
-            time.sleep(0.2) # TODO: maybe change this
+            time.sleep(0.2)
             if goal_handle.is_cancel_requested:
                 goal_handle.canceled()
                 return Task.Result()
